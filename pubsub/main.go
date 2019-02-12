@@ -1,4 +1,4 @@
-// Copyright 2014 Google LLC
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,8 +24,19 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"go.opencensus.io/examples/exporter"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 )
 
+// These tools are written to be extreamly readable
+// and are not intended to be used as patterns in
+// production code.
+
+// Creating some global varaibles to hold commandline
+// input data
 var (
 	topic        string
 	subscription string
@@ -37,18 +48,16 @@ func main() {
 	done := make(chan bool)
 
 	// Register stats and trace exporters to export
-	// the collected data.
-	//view.RegisterExporter(&exporter.PrintExporter{})
+	// the collected data to the console.
+	view.RegisterExporter(&exporter.PrintExporter{})
 	// Register the view to collect gRPC client stats.
-	// if err := view.Register(ocgrpc.DefaultClientViews...); err != nil {
-	// 	log.Fatal(err)
-	// }
+	if err := view.Register(ocgrpc.DefaultClientViews...); err != nil {
+		log.Fatal(err)
+	}
+	grpcDialOption := grpc.WithStatsHandler(&ocgrpc.ClientHandler{})
+	opt := option.WithGRPCDialOption(grpcDialOption)
 
-	// Future Add tracing to measture some backend status
-	// grpcDialOption := grpc.WithStatsHandler(&ocgrpc.ClientHandler{})
-	// opt := option.WithGRPCDialOption(grpcDialOption)
-
-	// Out Commandline parameters
+	// Load our commandline parameters here
 	flag.StringVar(&subscription, "subscription", "", "optional subscription name to listen on")
 	flag.StringVar(&topic, "topic", "", "Please provide the topic name! (required)")
 	flag.StringVar(&projectid, "projectid", "", "Please provide the GCP projectid hosting the topic and optional subscription")
@@ -61,19 +70,24 @@ func main() {
 	// Build a context.  If you are running this on a local machine you will need
 	// to run gcloud auth application-default login.  Otherwise you will need
 	// to use a json key and set the envirometn variable something like
-	//export GOOGLE_APPLICATION_CREDENTIALS="/home/user/Downloads/[FILE_NAME].json"
+	// export GOOGLE_APPLICATION_CREDENTIALS="/home/user/Downloads/[FILE_NAME].json"
 	ctx := context.Background()
 
 	// Build the connection Client
-	psClient, err := pubsub.NewClient(ctx, projectid)
+	psClient, err := pubsub.NewClient(ctx, projectid, opt)
 	if err != nil {
 		fmt.Printf("Pubsub Client creation error:%v\n", err.Error())
 	}
 	// Mark time in the log so we can see when the connection was set up.
 	// You might not see any network traffic until the first meessage is created
 	log.Printf("Client connection built now!")
+	
 	defer psClient.Close()
+	
+
 	t := psClient.Topic(topic)
+	// Logging the time on this command incase there is a network hit to test the message.
+	log.Println("Adding topic to client")
 
 	// Publish a message every 5 seconds.
 	// This goroutine will exit when the
@@ -97,6 +111,7 @@ func main() {
 		}
 
 	}(ctx, t)
+	
 	// If you provided a subscription at the commandline we attempt to monitor here
 	if subscription != "" {
 		sub := psClient.Subscription(subscription)
@@ -116,6 +131,3 @@ func main() {
 	<-done
 	t.Stop()
 }
-
-//ups-troubleshooting
-//Topic_HPS
